@@ -7,6 +7,6 @@ phases:
   build:
     commands:
       - mvn clean install -Dmaven.test.skip=true
-      - aws s3 cp target/lambda-code-build-1.0.0.jar s3://cdp-cd-dev-test/release/cdp-code-build/lambda-code-build-1.0.0.jar
+      - aws s3 cp target/lambda-code-build-4.0.0.jar s3://cdp-cd-dev-test/release/cdp-code-build/lambda-code-build-4.0.0.jar
       - sam deploy -t cicd/template-dev.yaml --config-env sfdc
       - sam deploy -t cicd/syndication-template-dev.yaml --config-env tealium
