@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS CF template for cdp data ingestor module CI'
+Resources:
+  CDPReleaseBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: cdp-cd-dev-test
+      Tags:
+        - Key: "Technical:ApplicationID"
+          Value: "APP-004158"
+        - Key: "Technical:ApplicationName"
+          Value: "CDP-DataIngestion"
+        - Key: "Technical:ApplicationSubName"
+          Value: "CDP DataIngestion for SFDC and SEED data"
+        - Key: "Technical:Environment"
+          Value : "NONPROD"
+        - Key: "Technical:PlatformOwner"
+          Value : "test@sysco.com"
+  CDPCIBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: cdp-ci-dev-test
+      Tags:
+        - Key: "Technical:ApplicationID"
+          Value: "APP-004158"
+        - Key: "Technical:ApplicationName"
+          Value: "CDP-DataIngestion"
+        - Key: "Technical:ApplicationSubName"
+          Value: "CDP DataIngestion for SFDC and SEED data"
+        - Key: "Technical:Environment"
+          Value : "NONPROD"
+        - Key: "Technical:PlatformOwner"
+          Value : "test@sysco.com"
+  IAMRoleCodeBuild:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: cdp-codebuild-dev-role
+      Description: 'Code build role for CDP data ingestor module'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+#      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundary-DevOps"
+      Policies:
+        - PolicyName: cdp-codebuild-iam-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'iam:*'
+                Resource: '*'
+        - PolicyName: cdp-codebuild-s3-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+        - PolicyName: cdp-codebuild-dynamodb-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "dynamodb:Describe*"
+                  - "dynamodb:List*"
+                Resource: '*'
+        - PolicyName: cdp-codebuild-sf-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:*"
+                Resource: '*'
+        - PolicyName: cdp-codebuild-cf-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "cloudformation:*"
+                Resource: '*'
+        - PolicyName: cdp-codebuild-lambda-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:*"
+                Resource: '*'
+        - PolicyName: cdp-codebuild-cloudwatch-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource: '*'
+        - PolicyName: cdp-codebuild-events-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "events:*"
+                Resource: '*'
+        - PolicyName: cdp-dynamodb-events-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "dynamodb:*"
+                Resource: '*'
+        - PolicyName: cdp-ec2-dev-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ec2:DescribeVpcs"
+                  - "ec2:DescribeSecurityGroups"
+                  - "ec2:CreateNetworkInterface"
+                  - "ec2:DescribeNetworkInterfaces"
+                  - "ec2:DeleteNetworkInterface"
+                  - "ec2:DescribeSubnets"
+                  - "ec2:DescribeVpcs"
+                Resource: '*'

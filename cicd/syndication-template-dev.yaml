@@ -1,0 +1,209 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: "Create CDP CX-Syndication stack"
+Globals:
+  Function:
+    Tags:
+      Technical:ApplicationID: APP-004158
+      Technical:ApplicationName: CDP-DataIngestion-CX-Syndication
+      Technical:ApplicationSubName: CDP DataIngestion for CX-Syndication data
+      Technical:Environment: NONPROD
+      Technical:PlatformOwner: test@sysco.com
+      AppVersion: "3.0.1"
+      Automation:PMC: Always On
+Resources:
+  CDPTealiumDataFeed:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: "CDPCXSyndidationFeed-dev"
+      CodeUri: "s3://cdp-cd-dev-test/release/cdp-code-build/sfdc-data-ingest-4.0.0.jar"
+      Handler: "com.sysco.cdp.SyndicationFuncionalHandler::handleRequest"
+      Runtime: "java11"
+      MemorySize: 2048
+      Timeout: 180
+#      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundary-DevOps"
+      Role: !GetAtt TealiumLambdaRole.Arn
+      Environment:
+        Variables:
+          audit_table: "CDPAudit"
+          tealium_destination_bucket: "cdp-amperity-data-dev"
+          tealium_source_bucket: "cxan-syndication-cdpservice-stage"
+          tealium_source_folder: "syndication/syndicate_cdp_service_dag/usage_cx_app_mart/current"
+          tealium_encryption_enabled: "true"
+          guest_to_customer_destination_bucket: "cdp-amperity-data-dev"
+          guest_to_customer_source_bucket: "cxan-syndication-cdpservice-stage"
+          guest_to_customer_source_folder: "syndication/syndicate_cdp_service_dag/mart.guest_to_cust_snapshot_mart/current"
+          guest_to_customer_encryption_enabled: "true"
+          leads_destination_bucket: "cdp-amperity-data-dev"
+          leads_source_bucket: "cxan-syndication-cdpservice-stage"
+          leads_source_folder: "syndication/syndicate_cdp_service_dag/sfdc.lead/current"
+          leads_encryption_enabled: "true"
+          encryption_bucket: "cdp-ci-dev-test"
+  CDPTealiumDataFeedSF:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: CDPTealiumDataFeedSF
+      Type: STANDARD
+      DefinitionUri: statemachine/cdp_tealium_sm.json
+      DefinitionSubstitutions:
+        CDPTealiumDataFeedARN: !GetAtt CDPTealiumDataFeed.Arn
+        CDPAuditorARN: !Sub arn:aws:lambda:us-east-1:${AWS::AccountId}:function:CDPAuditor-dev
+      Logging:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt TealiumSFLogs.Arn
+        IncludeExecutionData: true
+        Level: ALL
+#      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundary-DevOps"
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CDPTealiumDataFeed
+        - LambdaInvokePolicy:
+            FunctionName: !Sub CDPAuditor-dev
+        - EventBridgePutEventsPolicy:
+            EventBusName: default
+        - CloudWatchLogsFullAccess
+      Events:
+        TealiumEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(45 12 * * ? *)"
+            Description: "This event is configured to run the job to copy tealium data every day at 6.45 am"
+            Name: cdp_tealium_dev
+            Enabled: true
+            Input: "{\"jobtype\":\"tealium\"}"
+        LeadsEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(45 12 * * ? *)"
+            Description: "This event is configured to run the job to copy leads data every day at 6.45 am"
+            Name: cdp_leads_dev
+            Enabled: true
+            Input: "{\"jobtype\":\"leads\"}"
+        GuestEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(45 12 * * ? *)"
+            Description: "This event is configured to run the job to copy guest to customer data every day at 6.45 am CST"
+            Name: cdp_guest_dev
+            Enabled: true
+            Input: "{\"jobtype\":\"guest_to_customer\"}"
+  TealiumSFLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: "cdp-tealium-sam-logs-dev"
+  CDPAmperityDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: cdp-amperity-data-dev-test
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'AES256'
+      LifecycleConfiguration:
+        Rules:
+          - Id: cdpamperitystandardtoia
+            Prefix: logs
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+            ExpirationInDays: 60
+      Tags:
+        - Key: "Technical:ApplicationID"
+          Value: "APP-004158"
+        - Key: "Technical:ApplicationName"
+          Value: "CDP-DataIngestion"
+        - Key: "Technical:ApplicationSubName"
+          Value: "CDP DataIngestion for all CDP data"
+        - Key: "Technical:Environment"
+          Value : "NONPROD"
+        - Key: "Technical:PlatformOwner"
+          Value : "test@sysco.com"
+        - Key: "AppVersion"
+          Value : "0.0.6"
+  TealiumLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: CDP_Tealium_S3_Role
+      Description: 'Lambda role to cross-account S3 bucket transfer for tealium module'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+#      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundary-DevOps"
+      Policies:
+        - PolicyName: cdp-tealium-source-s3-dev-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                Resource: 'arn:aws:s3:::cxan-syndication-cdpservice-stage'
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource: 'arn:aws:s3:::cxan-syndication-cdpservice-stage/*'
+        - PolicyName: cdp-tealium-destination-s3-dev-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:ListBucket'
+                  - 's3:GetBucketLocation'
+                  - 's3:GetObjectVersion'
+                  - 's3:PutObject'
+                  - 's3:PutObjectAcl'
+                  - 's3:GetLifecycleConfiguration'
+                  - 's3:PutLifecycleConfiguration'
+                  - 's3:DeleteObject'
+                Resource:
+                  - 'arn:aws:s3:::cdp-telium-data-dev'
+                  - 'arn:aws:s3:::cdp-telium-data-dev/*'
+                  - 'arn:aws:s3:::cdp-amperity-data-dev'
+                  - 'arn:aws:s3:::cdp-amperity-data-dev/*'
+        - PolicyName: cdp-tealium-dynamodb-dev-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:DeleteItem'
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:Scan'
+                  - 'dynamodb:Query'
+                  - 'dynamodb:UpdateItem'
+                  - 'dynamodb:BatchWriteItem'
+                  - 'dynamodb:BatchGetItem'
+                  - 'dynamodb:DescribeTable'
+                  - 'dynamodb:ConditionCheckItem'
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:us-east-1:${AWS::AccountId}:table/CDPAudit'
+                  - !Sub 'arn:aws:dynamodb:us-east-1:${AWS::AccountId}:table/CDPAudit/index/*'
+        - PolicyName: cdp-encryption-s3-dev-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource: 'arn:aws:s3:::cdp-ci-dev-test/encryption/*'
+        - PolicyName: cdp-tealium-lambda-dev-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'

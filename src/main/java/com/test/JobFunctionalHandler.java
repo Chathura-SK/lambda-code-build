@@ -5,7 +5,7 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class RequestHandlerTest implements RequestHandler<Object, Object> {
+public class JobFunctionalHandler implements RequestHandler<Object, Object> {
 
   @Override
   public Object handleRequest(Object input, Context context) {

@@ -1,0 +1,217 @@
+{
+  "Comment": "State function to initiate data ingestion",
+  "StartAt": "EnrichRequest",
+  "States": {
+    "EnrichRequest": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${CDPRequestEnricherARN}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "CreateSeedJob"
+    },
+    "CreateSeedJob": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "${CDPDataIngestorARN}",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Comment": "This process is to get the Job Id",
+      "Next": "CheckSeedJobStatus"
+    },
+    "CheckSeedJobStatus": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.jobStatus",
+          "StringMatches": "JobError",
+          "Next": "JobFailed"
+        }
+      ],
+      "Default": "WaitForRetry"
+    },
+    "WaitForRetry": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "CheckJobStatus"
+    },
+    "CheckJobStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${CDPJobStatusCheckARN}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Comment": "To check the status of the job",
+      "Next": "CheckJobCompletion"
+    },
+    "CheckJobCompletion": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.jobStatus",
+          "StringMatches": "Ingested",
+          "Next": "Success"
+        },
+        {
+          "Variable": "$.jobStatus",
+          "StringMatches": "JobError",
+          "Next": "JobFailed"
+        }
+      ],
+      "Default": "IsJobCountReached"
+    },
+    "ProcessInput": {
+      "Type": "Pass",
+      "Next": "ProcessAudit",
+      "Parameters": {
+        "jobType.$": "$.jobType",
+        "jobStatus": "JobError",
+        "jobId.$": "$.jobId",
+        "seedJobId.$": "$.seedJobId",
+        "jobReference.$": "$.jobReference",
+        "jobError": "Error due to job not ingested",
+        "jobRetryCounter.$": "$.jobRetryCounter",
+        "processRetryCounter.$": "$.processRetryCounter"
+      }
+    },
+    "IsJobCountReached": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.jobRetryCounter",
+          "NumericLessThanEquals": 12,
+          "Next": "WaitForRetry"
+        }
+      ],
+      "Default": "PassJobInput"
+    },
+    "PassJobInput": {
+      "Type": "Pass",
+      "Next": "JobAudit",
+      "Parameters": {
+        "jobType.$": "$.jobType",
+        "jobStatus": "JobError",
+        "jobId.$": "$.jobId",
+        "seedJobId.$": "$.seedJobId",
+        "jobReference.$": "$.jobReference",
+        "jobError": "Error due to job not ingested within current process, going to reinitiate process",
+        "jobRetryCounter.$": "$.jobRetryCounter",
+        "processRetryCounter.$": "$.processRetryCounter"
+      }
+    },
+    "JobAudit": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${CDPAuditorARN}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "IsProcessCountReached"
+    },
+    "IsProcessCountReached": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.processRetryCounter",
+          "NumericEquals": 3,
+          "Next": "ProcessInput"
+        }
+      ],
+      "Default": "PassProcessFlow"
+    },
+    "ProcessAudit": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${CDPAuditorARN}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "JobFailed"
+    },
+    "PassProcessFlow": {
+      "Type": "Pass",
+      "Next": "CreateSeedJob",
+      "Parameters": {
+        "jobtype.$": "$.jobType",
+        "jobId.$": "$.jobId",
+        "processRetryCounter.$": "$.processRetryCounter"
+      }
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "JobFailed": {
+      "Type": "Fail",
+      "Error": "Job Failed",
+      "Cause": "Error Caused due to $.jobError"
+    }
+  }
+}

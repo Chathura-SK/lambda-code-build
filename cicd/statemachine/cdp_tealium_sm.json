@@ -1,0 +1,111 @@
+{
+  "Comment": "State function for CX-Syndication data transfer",
+  "StartAt": "CX-Syndication Data Transfer",
+  "States": {
+    "CX-Syndication Data Transfer": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${CDPTealiumDataFeedARN}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "CheckJobStatus"
+    },
+    "CheckJobStatus": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.jobStatus",
+          "StringMatches": "Ingested",
+          "Next": "Success"
+        },
+        {
+          "Variable": "$.jobStatus",
+          "StringMatches": "JobReInitiated",
+          "Next": "Wait"
+        }
+      ],
+      "Default": "Fail"
+    },
+    "Wait": {
+      "Type": "Wait",
+      "Seconds": 1800,
+      "Next": "RepeatCX-SyndicationJob"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "RepeatCX-SyndicationJob": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.processRetryCounter",
+          "NumericLessThan": 4,
+          "Next": "ForwardJob"
+        }
+      ],
+      "Default": "ProcessAuditData"
+    },
+    "ProcessAuditData": {
+      "Type": "Pass",
+      "Next": "ProcessAudit",
+      "Parameters": {
+        "jobType.$": "$.jobType",
+        "jobStatus": "JobError",
+        "jobId.$": "$.jobId",
+        "seedJobId.$": "$.seedJobId",
+        "jobReference.$": "$.jobReference",
+        "jobError": "Error due to job not ingested",
+        "jobRetryCounter.$": "$.jobRetryCounter",
+        "processRetryCounter.$": "$.processRetryCounter"
+      }
+    },
+    "ForwardJob": {
+      "Type": "Pass",
+      "Next": "CX-Syndication Data Transfer",
+      "Parameters": {
+        "jobtype.$": "$.jobType",
+        "jobId.$": "$.jobId",
+        "processRetryCounter.$": "$.processRetryCounter"
+      }
+    },
+    "ProcessAudit": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${CDPAuditorARN}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Fail"
+    },
+    "Fail": {
+      "Type": "Fail"
+    }
+  }
+}

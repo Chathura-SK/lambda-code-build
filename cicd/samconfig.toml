@@ -1,0 +1,21 @@
+version=0.1
+[default.deploy.parameters]
+stack_name = "CDPDataIngestor-CF"
+s3_bucket = "cdp-ci-dev-test"
+region = "us-east-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND"
+
+[tealium.deploy.parameters]
+stack_name = "CDPTealiumDataFeed-CF"
+s3_bucket = "cdp-ci-dev-test"
+region = "us-east-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND"
+
+[sfdc.deploy.parameters]
+stack_name = "CDPDataIngestor-CF"
+s3_bucket = "cdp-ci-dev-test"
+region = "us-east-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND"

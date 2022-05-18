@@ -1,0 +1,377 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: "Create CDP stack"
+Globals:
+  Function:
+    Tags:
+      Technical:ApplicationID: APP-004158
+      Technical:ApplicationName: CDP-DataIngestion
+      Technical:ApplicationSubName: CDP DataIngestion for SFDC and SEED data
+      Technical:Environment: NONPROD
+      Technical:PlatformOwner: test@sysco.com
+      AppVersion: "3.0.1"
+      Automation:PMC: Always On
+Resources:
+  CDPAudit:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: CDPAudit
+      AttributeDefinitions:
+        - AttributeName: job_type
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: job_status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_type
+          KeyType: "HASH"
+        - AttributeName: timestamp
+          KeyType: "RANGE"
+      GlobalSecondaryIndexes:
+        - IndexName: jobstatusindex
+          KeySchema:
+            - AttributeName: job_type
+              KeyType: "HASH"
+            - AttributeName: job_status
+              KeyType: "RANGE"
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+  CDPSeedDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: cdp-seed-data-dev-test
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'AES256'
+      LifecycleConfiguration:
+        Rules:
+          - Id: cdpseedstandardtoia
+            Prefix: logs
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+            ExpirationInDays: 60
+      Tags:
+        - Key: "Technical:ApplicationID"
+          Value: "APP-004158"
+        - Key: "Technical:ApplicationName"
+          Value: "CDP-DataIngestion"
+        - Key: "Technical:ApplicationSubName"
+          Value: "CDP DataIngestion for SFDC and SEED data"
+        - Key: "Technical:Environment"
+          Value : "NONPROD"
+        - Key: "Technical:PlatformOwner"
+          Value : "test@sysco.com"
+        - Key: "AppVersion"
+          Value : "3.0.0"
+  CDPTeliumDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: cdp-telium-data-dev-test
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'AES256'
+      LifecycleConfiguration:
+        Rules:
+          - Id: cdpteliumstandardtoia
+            Prefix: logs
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+            ExpirationInDays: 60
+      Tags:
+        - Key: "Technical:ApplicationID"
+          Value: "APP-004158"
+        - Key: "Technical:ApplicationName"
+          Value: "CDP-DataIngestion"
+        - Key: "Technical:ApplicationSubName"
+          Value: "CDP DataIngestion for SFDC and SEED data"
+        - Key: "Technical:Environment"
+          Value : "NONPROD"
+        - Key: "Technical:PlatformOwner"
+          Value : "test@sysco.com"
+        - Key: "AppVersion"
+          Value : "3.0.0"
+  CDPDataIngestor:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: "CDPDataIngestor-dev"
+      CodeUri: "s3://cdp-cd-dev-test/release/cdp-code-build/sfdc-data-ingest-4.0.0.jar"
+      Handler: "com.sysco.cdp.JobFunctionalHandler::handleRequest"
+      Runtime: "java11"
+      MemorySize: 512
+      Timeout: 180
+#      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundary-DevOps"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt CDPAudit.Arn
+        - Statement:
+            - Sid: SecretManagerGetSecretPolicy
+              Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: '*'
+            - Sid: DynamoDBPutItemPolicy
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt CDPAudit.Arn
+      Environment:
+        Variables:
+          audit_table: "CDPAudit"
+          env_type: "dev"
+          token_url: "https://api-gateway-dev.sysco.com/token"
+          account_contacts_api_url: "https://api-gateway-dev.sysco.com/data/usbl-account-contact-extract-v1/account-contacts/bulk-jobs"
+          accounts_api_url: "https://api-gateway-dev.sysco.com/data/usbl-account-contact-extract-v1/accounts/bulk-jobs"
+          contacts_api_url: "https://api-gateway-dev.sysco.com/data/usbl-account-contact-extract-v1/contacts/bulk-jobs"
+          svoc_api_url: "https://api-gateway-dev.sysco.com/data/usbl/seed/customer/svoc/bulk-jobs"
+          billto_api_url: "https://api-gateway-dev.sysco.com/services/usbl-cmdm-bulk-api-v1/cmdm-bulk-api/batch/customers"
+          shipto_api_url: "https://api-gateway-dev.sysco.com/services/usbl-cmdm-bulk-api-v1/cmdm-bulk-api/batch/customers"
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-0954d9d1c222cbc7f
+        SubnetIds:
+          - subnet-0f5e52395041206b6
+          - subnet-0833b803811bd6efe
+          - subnet-08cfe0e8927957c1a
+  CDPAuditor:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: "CDPAuditor-dev"
+      CodeUri: "s3://cdp-cd-dev-test/release/cdp-code-build/sfdc-data-ingest-4.0.0.jar"
+      Handler: "com.sysco.cdp.JobAuditHandler::handleRequest"
+      Runtime: "java11"
+      MemorySize: 512
+      Timeout: 180
+#      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundary-DevOps"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt CDPAudit.Arn
+        - Statement:
+            - Sid: DynamoDBPutItemPolicy
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt CDPAudit.Arn
+      Environment:
+        Variables:
+          audit_table: "CDPAudit"
+          env_type: "dev"
+  CDPRequestEnricher:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: "CDPRequestEnricher-dev"
+      CodeUri: "s3://cdp-cd-dev-test/release/cdp-code-build/sfdc-data-ingest-4.0.0.jar"
+      Handler: "com.sysco.cdp.RequestEnricherHandler::handleRequest"
+      Runtime: "java11"
+      MemorySize: 512
+      Timeout: 180
+#      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundary-DevOps"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt CDPAudit.Arn
+        - EventBridgePutEventsPolicy:
+            EventBusName: default
+        - Statement:
+            - Sid: DynamoDBPutItemPolicy
+              Effect: Allow
+              Action:
+                - dynamodb:*
+              Resource: !GetAtt CDPAudit.Arn
+      Environment:
+        Variables:
+          audit_table: "CDPAudit"
+          env_type: "dev"
+  CDPJobStatusCheck:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: "CDPJobStatusCheck-dev"
+      CodeUri: "s3://cdp-cd-dev-test/release/cdp-code-build/sfdc-data-ingest-4.0.0.jar"
+      Handler: "com.sysco.cdp.JobStepStatusCheckHandler::handleRequest"
+      Runtime: java11
+      MemorySize: 2048
+      Timeout: 300
+#      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundary-DevOps"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt CDPAudit.Arn
+        - S3CrudPolicy:
+            BucketName: !Ref CDPSeedDataBucket
+        - S3CrudPolicy:
+            BucketName: "cdp-amperity-data-dev-test"
+        - S3ReadPolicy:
+            BucketName: "cdp-ci-dev-test"
+        - Statement:
+            - Sid: SecretManagerGetSecretPolicy
+              Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: '*'
+            - Sid: DynamoDBPutItemPolicy
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt CDPAudit.Arn
+            - Sid: S3PutObjectPolicy
+              Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource: !GetAtt CDPSeedDataBucket.Arn
+      Environment:
+        Variables:
+          env_type: dev
+          audit_table: "CDPAudit"
+          token_url: "https://api-gateway-dev.sysco.com/token"
+          contacts_status_url: "https://api-gateway-dev.sysco.com/data/usbl-account-contact-extract-v1/contacts/job-ids"
+          contacts_encryption_enabled: "true"
+          contacts_destination_bucket: "cdp-amperity-data-dev"
+          accounts_status_url: "https://api-gateway-dev.sysco.com/data/usbl-account-contact-extract-v1/accounts/job-ids"
+          accounts_encryption_enabled: "true"
+          accounts_destination_bucket: "cdp-amperity-data-dev"
+          account_contacts_status_url: "https://api-gateway-dev.sysco.com/data/usbl-account-contact-extract-v1/account-contacts/job-ids"
+          account_contacts_encryption_enabled: "true"
+          account_contacts_destination_bucket: "cdp-amperity-data-dev"
+          svoc_status_url: "https://api-gateway-dev.sysco.com/data/usbl/seed/customer/svoc/job-ids"
+          svoc_encryption_enabled: "true"
+          svoc_destination_bucket: "cdp-amperity-data-dev"
+          billto_status_url : "https://api-gateway-dev.sysco.com/services/usbl-cmdm-bulk-api-v1/cmdm-bulk-api/batch/status"
+          billto_encryption_enabled: "true"
+          billto_destination_bucket: "cdp-amperity-data-dev"
+          shipto_status_url : "https://api-gateway-dev.sysco.com/services/usbl-cmdm-bulk-api-v1/cmdm-bulk-api/batch/status"
+          shipto_encryption_enabled: "true"
+          shipto_destination_bucket: "cdp-amperity-data-dev"
+          encryption_bucket: "cdp-ci-dev"
+      VpcConfig:
+        SecurityGroupIds:
+          SecurityGroupIds:
+            - sg-0954d9d1c222cbc7f
+            SubnetIds:
+              - subnet-0f5e52395041206b6
+              - subnet-0833b803811bd6efe
+              - subnet-08cfe0e8927957c1a
+  CDPDataIngestorSF:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: CDPDataIngestorSF
+      Type: STANDARD
+      DefinitionUri: statemachine/cdp_ingestor_sm.json
+      DefinitionSubstitutions:
+        CDPDataIngestorARN: !GetAtt CDPDataIngestor.Arn
+        CDPJobStatusCheckARN: !GetAtt CDPJobStatusCheck.Arn
+        CDPAuditorARN: !GetAtt CDPAuditor.Arn
+        CDPRequestEnricherARN: !GetAtt CDPRequestEnricher.Arn
+      Logging:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt SAMLogs.Arn
+        IncludeExecutionData: true
+        Level: ALL
+#      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/PermissionBoundary-DevOps"
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CDPDataIngestor
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CDPJobStatusCheck
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CDPAuditor
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CDPRequestEnricher
+        - EventBridgePutEventsPolicy:
+            EventBusName: default
+        - CloudWatchLogsFullAccess
+      Events:
+        ContactEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(45 12 * * ? *)"
+            Description: "This event is configured to run the contact job every day at 6.45 am"
+            Name: cdp_contact_dev
+            Enabled: true
+            Input: "{\"jobtype\":\"contacts\"}"
+        AccountEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(45 12 * * ? *)"
+            Description: "This event is configured to run the account job every day at 6.45 am"
+            Name: cdp_account_dev
+            Enabled: true
+            Input: "{\"jobtype\":\"accounts\"}"
+        AccountContactsEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(45 12 * * ? *)"
+            Description: "This event is configured to run the account contacts job every day at 6.45 am"
+            Name: cdp_accountcontacts_dev
+            Enabled: true
+            Input: "{\"jobtype\":\"account_contacts\"}"
+        SVOCEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(45 12 * * ? *)"
+            Description: "This event is configured to run the svoc job every day at 6.45 am"
+            Name: cdp_svoc_dev
+            Enabled: true
+            Input: "{\"jobtype\":\"svoc\"}"
+        BillToEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(45 12 * * ? *)"
+            Description: "This event is configured to run the svoc job every day at 6.45 am"
+            Name: cdp_billto_dev
+            Enabled: false
+            Input: "{\"jobtype\":\"billto\"}"
+        ShipToEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(45 12 * * ? *)"
+            Description: "This event is configured to run the svoc job every day at 6.45 am"
+            Name: cdp_shipto_dev
+            Enabled: false
+            Input: "{\"jobtype\":\"shipto\"}"
+  SAMLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: "cdp-sam-logs"
+  SampleBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CDPSeedDataBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:ListBucket'
+            Effect: Allow
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref CDPSeedDataBucket
+            Principal:
+              AWS:
+                - 'arn:aws:iam::485692797166:user/tenant/cst-sysco'
+          - Action:
+              - 's3:GetObject'
+            Effect: Allow
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref CDPSeedDataBucket
+                - /*
+            Principal:
+              AWS:
+                - 'arn:aws:iam::485692797166:user/tenant/cst-sysco'
+Outputs:
+  BucketName:
+    Value: !Ref CDPSeedDataBucket
+    Description: Name of the sample Amazon S3 bucket with a lifecycle configuration.
